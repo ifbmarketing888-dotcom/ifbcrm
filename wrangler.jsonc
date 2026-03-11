@@ -9,8 +9,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "crm_db",
-      "database_id": "YOUR_D1_DATABASE_ID"
+      "database_name": "ifbcrm",
+      "database_id": "1e469271-4dda-4acf-9cc1-e5abce740147"
     }
   ],
   "observability": {
