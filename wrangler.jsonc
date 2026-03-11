@@ -1,10 +1,5 @@
-/**
- * Cloudflare Pages Configuration
- */
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "edge-crm",
-  "compatibility_date": "2024-04-03",
+  "name": "ifbcrm",
   "pages_build_output_dir": "dist",
   "d1_databases": [
     {
@@ -12,8 +7,5 @@
       "database_name": "ifbcrm",
       "database_id": "1e469271-4dda-4acf-9cc1-e5abce740147"
     }
-  ],
-  "observability": {
-    "enabled": true
-  }
+  ]
 }
