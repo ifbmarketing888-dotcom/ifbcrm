@@ -22,12 +22,19 @@ import { cn } from "./lib/utils";
 
 const STORAGE_KEYS = {
   USER: "crm_user",
+  USERS: "crm_users",
   LEADS: "crm_leads",
   DEALS: "crm_deals",
   TASKS: "crm_tasks"
 };
 
+const INITIAL_USERS = [
+  { id: "1", email: "admin@example.com", password: "admin123", name: "Super Admin", role: "admin" },
+  { id: "2", email: "sales@example.com", password: "sales123", name: "Sales Rep", role: "sales" },
+];
+
 const INITIAL_LEADS = [
+// ... (rest of initial data remains same)
   { id: "1", first_name: "Alex", last_name: "Rivera", email: "alex@stellar.com", company: "Stellar Tech", status: "lead", score: 85, created_at: new Date().toISOString() },
   { id: "2", first_name: "Sarah", last_name: "Chen", email: "sarah@nexus.com", company: "Nexus Labs", status: "contacted", score: 92, created_at: new Date().toISOString() },
   { id: "3", first_name: "Marcus", last_name: "Thorne", email: "marcus@vanguard.com", company: "Vanguard", status: "qualified", score: 78, created_at: new Date().toISOString() },
@@ -57,17 +64,21 @@ const useAuth = () => {
   }, []);
 
   const login = async (email: string, password: string) => {
-    // Simplest Login: Any email with password "admin123"
-    if (password === "admin123") {
-      const userData = { 
-        id: "admin-1", 
-        email, 
-        name: email.split('@')[0], 
-        role: "admin" 
-      };
-      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(userData));
-      setUser(userData);
-      return true;
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      
+      if (res.ok) {
+        const userData = await res.json();
+        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(userData));
+        setUser(userData);
+        return true;
+      }
+    } catch (e) {
+      console.error("Login error:", e);
     }
     return false;
   };
@@ -85,45 +96,153 @@ const useCRMData = () => {
   const [leads, setLeads] = useState<any[]>([]);
   const [deals, setDeals] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [stats, setStats] = useState({ leads: 0, pipelineValue: 0, pendingTasks: 0 });
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = async () => {
+    try {
+      // Parallel fetch for better performance
+      const [leadsRes, usersRes, statsRes] = await Promise.all([
+        fetch("/api/leads"),
+        fetch("/api/users"),
+        fetch("/api/stats")
+      ]);
+
+      if (leadsRes.ok) setLeads(await leadsRes.json());
+      if (usersRes.ok) setUsers(await usersRes.json());
+      if (statsRes.ok) setStats(await statsRes.json());
+    } catch (e) {
+      console.error("Fetch error:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const savedLeads = localStorage.getItem(STORAGE_KEYS.LEADS);
-    const savedDeals = localStorage.getItem(STORAGE_KEYS.DEALS);
-    const savedTasks = localStorage.getItem(STORAGE_KEYS.TASKS);
-
-    if (!savedLeads) {
-      localStorage.setItem(STORAGE_KEYS.LEADS, JSON.stringify(INITIAL_LEADS));
-      setLeads(INITIAL_LEADS);
-    } else {
-      setLeads(JSON.parse(savedLeads));
-    }
-
-    if (!savedDeals) {
-      localStorage.setItem(STORAGE_KEYS.DEALS, JSON.stringify(INITIAL_DEALS));
-      setDeals(INITIAL_DEALS);
-    } else {
-      setDeals(JSON.parse(savedDeals));
-    }
-
-    if (!savedTasks) {
-      localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(INITIAL_TASKS));
-      setTasks(INITIAL_TASKS);
-    } else {
-      setTasks(JSON.parse(savedTasks));
-    }
+    fetchData();
   }, []);
 
-  const stats = useMemo(() => {
-    const pipelineValue = deals.reduce((acc, d) => acc + d.value, 0);
-    const pendingTasks = tasks.filter(t => t.status !== "done").length;
-    return {
-      leads: leads.length,
-      pipelineValue,
-      pendingTasks
-    };
-  }, [leads, deals, tasks]);
+  const addUser = async (newUser: any) => {
+    const res = await fetch("/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newUser),
+    });
+    if (res.ok) fetchData();
+  };
 
-  return { leads, deals, tasks, stats };
+  const addLead = async (newLead: any) => {
+    const res = await fetch("/api/leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newLead),
+    });
+    if (res.ok) fetchData();
+  };
+
+  return { leads, deals, tasks, users, stats, loading, addUser, addLead, refresh: fetchData };
+};
+
+// --- Components ---
+
+const UserManagement = () => {
+  const { users, addUser } = useCRMData();
+  const [showAdd, setShowAdd] = useState(false);
+  const [formData, setFormData] = useState({ name: "", email: "", password: "", role: "sales" });
+
+  const handleSubmit = (e: any) => {
+    e.preventDefault();
+    addUser(formData);
+    setShowAdd(false);
+    setFormData({ name: "", email: "", password: "", role: "sales" });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Team Management</h1>
+          <p className="text-muted-foreground">Manage access and roles for your team.</p>
+        </div>
+        <button 
+          onClick={() => setShowAdd(true)}
+          className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors"
+        >
+          <UserPlus className="w-4 h-4" /> Add Member
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm animate-in fade-in slide-in-from-top-4">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input 
+              placeholder="Full Name" 
+              value={formData.name} 
+              onChange={e => setFormData({...formData, name: e.target.value})} 
+              className="px-4 py-2 border rounded-lg outline-none focus:border-black" required 
+            />
+            <input 
+              placeholder="Email" 
+              type="email" 
+              value={formData.email} 
+              onChange={e => setFormData({...formData, email: e.target.value})} 
+              className="px-4 py-2 border rounded-lg outline-none focus:border-black" required 
+            />
+            <input 
+              placeholder="Password" 
+              type="password" 
+              value={formData.password} 
+              onChange={e => setFormData({...formData, password: e.target.value})} 
+              className="px-4 py-2 border rounded-lg outline-none focus:border-black" required 
+            />
+            <select 
+              value={formData.role} 
+              onChange={e => setFormData({...formData, role: e.target.value})} 
+              className="px-4 py-2 border rounded-lg outline-none focus:border-black"
+            >
+              <option value="sales">Sales</option>
+              <option value="admin">Admin</option>
+            </select>
+            <div className="md:col-span-2 flex gap-2">
+              <button type="submit" className="bg-black text-white px-4 py-2 rounded-lg text-sm font-medium">Create Account</button>
+              <button type="button" onClick={() => setShowAdd(false)} className="bg-zinc-100 px-4 py-2 rounded-lg text-sm font-medium">Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-zinc-50 border-b border-zinc-100">
+            <tr>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Name</th>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Email</th>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Role</th>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Password</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100">
+            {users.map((u: any) => (
+              <tr key={u.id} className="hover:bg-zinc-50 transition-colors">
+                <td className="px-6 py-4 text-sm font-medium">{u.name}</td>
+                <td className="px-6 py-4 text-sm text-zinc-500">{u.email}</td>
+                <td className="px-6 py-4">
+                  <span className={cn(
+                    "px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider",
+                    u.role === "admin" ? "bg-blue-100 text-blue-700" : "bg-zinc-100 text-zinc-600"
+                  )}>
+                    {u.role}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-sm text-zinc-400 font-mono">••••••••</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 };
 
 // --- Components ---
@@ -302,6 +421,8 @@ export default function App() {
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   if (!user) return <Login onLogin={login} />;
 
+  const isAdmin = user.role === "admin";
+
   return (
     <div className="min-h-screen bg-[#F9F9F9] flex">
       {/* Sidebar */}
@@ -322,6 +443,9 @@ export default function App() {
             <SidebarItem to="/leads" icon={Users} label="Leads" active={location.pathname === "/leads"} />
             <SidebarItem to="/deals" icon={Briefcase} label="Deals" active={location.pathname === "/deals"} />
             <SidebarItem to="/tasks" icon={CheckSquare} label="Tasks" active={location.pathname === "/tasks"} />
+            {isAdmin && (
+              <SidebarItem to="/admin/users" icon={Shield} label="Team" active={location.pathname === "/admin/users"} />
+            )}
           </nav>
 
           <div className="pt-6 border-t border-zinc-100 space-y-1">
@@ -375,6 +499,7 @@ export default function App() {
             <Route path="/deals" element={<div className="text-3xl font-bold">Deals Page</div>} />
             <Route path="/tasks" element={<div className="text-3xl font-bold">Tasks Page</div>} />
             <Route path="/settings" element={<div className="text-3xl font-bold">Settings Page</div>} />
+            {isAdmin && <Route path="/admin/users" element={<UserManagement />} />}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>

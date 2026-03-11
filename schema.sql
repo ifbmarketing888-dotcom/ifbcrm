@@ -1,76 +1,48 @@
--- D1 Database Schema for EdgeCRM
-
--- Users & Permissions
+-- 初始化 EdgeCRM 数据库表结构
 CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    name TEXT,
-    role TEXT DEFAULT 'user', -- 'super_admin', 'admin', 'sales', 'user'
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  password TEXT NOT NULL,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Customers / Contacts
-CREATE TABLE IF NOT EXISTS customers (
-    id TEXT PRIMARY KEY,
-    first_name TEXT,
-    last_name TEXT,
-    email TEXT UNIQUE NOT NULL,
-    phone TEXT,
-    company TEXT,
-    source TEXT, -- 'web', 'referral', 'ads'
-    status TEXT DEFAULT 'lead', -- 'lead', 'contact', 'customer'
-    lead_score INTEGER DEFAULT 0,
-    created_by TEXT REFERENCES users(id),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS leads (
+  id TEXT PRIMARY KEY,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  email TEXT,
+  company TEXT,
+  status TEXT DEFAULT 'lead',
+  score INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Funnel / Deals
 CREATE TABLE IF NOT EXISTS deals (
-    id TEXT PRIMARY KEY,
-    customer_id TEXT REFERENCES customers(id),
-    title TEXT NOT NULL,
-    value REAL DEFAULT 0,
-    stage TEXT DEFAULT 'discovery', -- 'discovery', 'proposal', 'negotiation', 'closed_won', 'closed_lost'
-    probability INTEGER DEFAULT 10,
-    expected_close_date DATE,
-    created_by TEXT REFERENCES users(id),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  id TEXT PRIMARY KEY,
+  lead_id TEXT,
+  title TEXT NOT NULL,
+  value REAL DEFAULT 0,
+  stage TEXT DEFAULT 'discovery',
+  probability INTEGER DEFAULT 0,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (lead_id) REFERENCES leads(id)
 );
 
--- Tasks
 CREATE TABLE IF NOT EXISTS tasks (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    description TEXT,
-    due_date DATETIME,
-    status TEXT DEFAULT 'todo', -- 'todo', 'in_progress', 'done'
-    priority TEXT DEFAULT 'medium', -- 'low', 'medium', 'high'
-    assigned_to TEXT REFERENCES users(id),
-    created_by TEXT REFERENCES users(id),
-    related_type TEXT, -- 'customer', 'deal'
-    related_id TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  status TEXT DEFAULT 'todo',
+  priority TEXT DEFAULT 'medium',
+  due_date DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tags
-CREATE TABLE IF NOT EXISTS tags (
-    id TEXT PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL,
-    color TEXT DEFAULT '#3b82f6'
-);
+-- 插入初始管理员账号 (密码: admin123)
+INSERT OR IGNORE INTO users (id, email, password, name, role) 
+VALUES ('admin-1', 'admin@example.com', 'admin123', 'Super Admin', 'admin');
 
--- Customer Tags (Many-to-Many)
-CREATE TABLE IF NOT EXISTS customer_tags (
-    customer_id TEXT REFERENCES customers(id),
-    tag_id TEXT REFERENCES tags(id),
-    PRIMARY KEY (customer_id, tag_id)
-);
-
--- Initial Data
-INSERT OR IGNORE INTO tags (id, name, color) VALUES 
-('1', 'High Value', '#ef4444'),
-('2', 'Warm Lead', '#f59e0b'),
-('3', 'Newsletter', '#10b981');
+-- 插入初始销售账号 (密码: sales123)
+INSERT OR IGNORE INTO users (id, email, password, name, role) 
+VALUES ('sales-1', 'sales@example.com', 'sales123', 'Sales Rep', 'sales');
