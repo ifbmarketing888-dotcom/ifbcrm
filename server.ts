@@ -72,7 +72,11 @@ async function startServer() {
   };
 
   // Auth Routes
-  app.post("/api/login", (req, res) => {
+  app.get("/api/auth/login", (req, res) => {
+    res.send("Auth API is active. Please use POST to login.");
+  });
+
+  app.post("/api/auth/login", (req, res) => {
     const { email, password } = req.body;
     console.log(`Login attempt for: ${email}`);
     const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as any;
