@@ -102,14 +102,17 @@ const useCRMData = () => {
 
   const fetchData = async () => {
     try {
-      // Parallel fetch for better performance
-      const [leadsRes, usersRes, statsRes] = await Promise.all([
+      const [leadsRes, dealsRes, tasksRes, usersRes, statsRes] = await Promise.all([
         fetch("/api/leads"),
+        fetch("/api/deals"),
+        fetch("/api/tasks"),
         fetch("/api/users"),
         fetch("/api/stats")
       ]);
 
       if (leadsRes.ok) setLeads(await leadsRes.json());
+      if (dealsRes.ok) setDeals(await dealsRes.json());
+      if (tasksRes.ok) setTasks(await tasksRes.json());
       if (usersRes.ok) setUsers(await usersRes.json());
       if (statsRes.ok) setStats(await statsRes.json());
     } catch (e) {
@@ -141,7 +144,25 @@ const useCRMData = () => {
     if (res.ok) fetchData();
   };
 
-  return { leads, deals, tasks, users, stats, loading, addUser, addLead, refresh: fetchData };
+  const convertToDeal = async (leadId: string, title: string, value: number) => {
+    const res = await fetch("/api/deals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lead_id: leadId, title, value, stage: 'discovery' }),
+    });
+    if (res.ok) fetchData();
+  };
+
+  const updateDealStatus = async (dealId: string, stage: 'won' | 'lost') => {
+    const res = await fetch("/api/deals", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: dealId, stage }),
+    });
+    if (res.ok) fetchData();
+  };
+
+  return { leads, deals, tasks, users, stats, loading, addUser, addLead, convertToDeal, updateDealStatus, refresh: fetchData };
 };
 
 // --- Components ---
@@ -319,16 +340,11 @@ const Dashboard = () => {
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">Welcome back, here's what's happening today.</p>
         </div>
-        <div className="flex gap-2">
-          <button className="bg-black text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Add Lead
-          </button>
-        </div>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
-          { label: "Active Leads", value: stats.leads, trend: "+12%", icon: Users },
+          { label: "Active Customers", value: stats.leads, trend: "+12%", icon: Users },
           { label: "Pipeline Value", value: `$${stats.pipelineValue.toLocaleString()}`, trend: "+5.4%", icon: Briefcase },
           { label: "Tasks Due", value: stats.pendingTasks, trend: "-2", icon: CheckSquare },
         ].map((stat) => (
@@ -398,20 +414,184 @@ const Dashboard = () => {
   );
 };
 
-const SidebarItem = ({ to, icon: Icon, label, active }: any) => (
-  <Link 
-    to={to} 
-    className={cn(
-      "flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
-      active 
-        ? "bg-black text-white shadow-lg shadow-black/10" 
-        : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-    )}
-  >
-    <Icon className="w-4 h-4" />
-    {label}
-  </Link>
-);
+const CustomersPage = () => {
+  const { leads, addLead, convertToDeal } = useCRMData();
+  const [showAdd, setShowAdd] = useState(false);
+  const [formData, setFormData] = useState({ first_name: "", last_name: "", email: "", company: "", status: "lead", score: 50 });
+
+  const handleSubmit = (e: any) => {
+    e.preventDefault();
+    addLead(formData);
+    setShowAdd(false);
+    setFormData({ first_name: "", last_name: "", email: "", company: "", status: "lead", score: 50 });
+  };
+
+  const handleConvert = (lead: any) => {
+    const title = prompt("Enter Deal Title:", `Deal for ${lead.company}`);
+    const value = prompt("Enter Deal Value ($):", "1000");
+    if (title && value) {
+      convertToDeal(lead.id, title, parseFloat(value));
+      alert("Converted to Deal successfully!");
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
+          <p className="text-muted-foreground">Manage your leads and customer relationships.</p>
+        </div>
+        <button 
+          onClick={() => setShowAdd(true)}
+          className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Add Customer
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input placeholder="First Name" value={formData.first_name} onChange={e => setFormData({...formData, first_name: e.target.value})} className="px-4 py-2 border rounded-lg" required />
+            <input placeholder="Last Name" value={formData.last_name} onChange={e => setFormData({...formData, last_name: e.target.value})} className="px-4 py-2 border rounded-lg" required />
+            <input placeholder="Email" type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="px-4 py-2 border rounded-lg" required />
+            <input placeholder="Company" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} className="px-4 py-2 border rounded-lg" required />
+            <div className="md:col-span-2 flex gap-2">
+              <button type="submit" className="bg-black text-white px-4 py-2 rounded-lg text-sm font-medium">Save Customer</button>
+              <button type="button" onClick={() => setShowAdd(false)} className="bg-zinc-100 px-4 py-2 rounded-lg text-sm font-medium">Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-zinc-50 border-b border-zinc-100">
+            <tr>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Name</th>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Company</th>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Status</th>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100">
+            {leads.map((lead: any) => (
+              <tr key={lead.id} className="hover:bg-zinc-50 transition-colors">
+                <td className="px-6 py-4">
+                  <p className="text-sm font-medium">{lead.first_name} {lead.last_name}</p>
+                  <p className="text-xs text-zinc-400">{lead.email}</p>
+                </td>
+                <td className="px-6 py-4 text-sm text-zinc-500">{lead.company}</td>
+                <td className="px-6 py-4">
+                  <span className="px-2 py-1 bg-zinc-100 rounded-md text-[10px] font-bold uppercase">{lead.status}</span>
+                </td>
+                <td className="px-6 py-4">
+                  <button 
+                    onClick={() => handleConvert(lead)}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  >
+                    <TrendingUp className="w-3 h-3" /> Convert to Deal
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const DealsPage = () => {
+  const { deals, updateDealStatus } = useCRMData();
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Sales Pipeline</h1>
+          <p className="text-muted-foreground">Track your active deals and revenue.</p>
+        </div>
+      </div>
+
+      <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-zinc-50 border-b border-zinc-100">
+            <tr>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Deal Title</th>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Customer</th>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Value</th>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Stage</th>
+              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100">
+            {deals.map((deal: any) => (
+              <tr key={deal.id} className="hover:bg-zinc-50 transition-colors">
+                <td className="px-6 py-4 text-sm font-medium">{deal.title}</td>
+                <td className="px-6 py-4 text-sm text-zinc-500">{deal.first_name} {deal.last_name}</td>
+                <td className="px-6 py-4 text-sm font-bold text-emerald-600">${deal.value?.toLocaleString()}</td>
+                <td className="px-6 py-4">
+                  <span className={cn(
+                    "px-2 py-1 rounded-md text-[10px] font-bold uppercase",
+                    deal.stage === 'won' ? "bg-emerald-100 text-emerald-700" : 
+                    deal.stage === 'lost' ? "bg-rose-100 text-rose-700" : "bg-blue-100 text-blue-700"
+                  )}>
+                    {deal.stage}
+                  </span>
+                </td>
+                <td className="px-6 py-4 flex gap-2">
+                  {deal.stage !== 'won' && deal.stage !== 'lost' && (
+                    <>
+                      <button onClick={() => updateDealStatus(deal.id, 'won')} className="text-[10px] font-bold text-emerald-600 hover:underline">WON</button>
+                      <button onClick={() => updateDealStatus(deal.id, 'lost')} className="text-[10px] font-bold text-rose-600 hover:underline">LOST</button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const TasksPage = () => {
+  const { tasks } = useCRMData();
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Tasks</h1>
+          <p className="text-muted-foreground">Stay on top of your to-do list.</p>
+        </div>
+      </div>
+
+      <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="divide-y divide-zinc-100">
+          {tasks.map((task: any) => (
+            <div key={task.id} className="p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "w-2 h-2 rounded-full",
+                  task.priority === 'high' ? "bg-rose-500" : "bg-blue-500"
+                )} />
+                <p className="text-sm font-medium">{task.title}</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-xs text-zinc-400">{new Date(task.due_date).toLocaleDateString()}</span>
+                <span className="px-2 py-1 bg-zinc-100 rounded-md text-[10px] font-bold uppercase">{task.status}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function App() {
   const { user, loading, login, logout } = useAuth();
@@ -495,9 +675,9 @@ export default function App() {
         <div className="p-8 max-w-7xl mx-auto w-full">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/leads" element={<div className="text-3xl font-bold">Leads Page</div>} />
-            <Route path="/deals" element={<div className="text-3xl font-bold">Deals Page</div>} />
-            <Route path="/tasks" element={<div className="text-3xl font-bold">Tasks Page</div>} />
+            <Route path="/leads" element={<CustomersPage />} />
+            <Route path="/deals" element={<DealsPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
             <Route path="/settings" element={<div className="text-3xl font-bold">Settings Page</div>} />
             {isAdmin && <Route path="/admin/users" element={<UserManagement />} />}
             <Route path="*" element={<Navigate to="/" replace />} />
