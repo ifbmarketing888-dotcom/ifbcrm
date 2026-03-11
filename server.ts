@@ -11,6 +11,26 @@ const dbFile = "crm.db";
 const db = new Database(dbFile);
 const JWT_SECRET = "edge-crm-secret-key-12345"; // In production, use process.env.JWT_SECRET
 
+// Auth Middleware
+const authenticate = (req: any, res: any, next: any) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (e) {
+    res.status(401).json({ error: "Invalid token" });
+  }
+};
+
+const isAdmin = (req: any, res: any, next: any) => {
+  if (req.user.role !== "super_admin" && req.user.role !== "admin") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  next();
+};
+
 // Initialize DB if empty
 const schema = fs.readFileSync("schema.sql", "utf8");
 db.exec(schema);
@@ -48,82 +68,58 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // 1. Basic Middlewares
   app.use(express.json());
   app.use(cookieParser());
 
-  // Auth Middleware
-  const authenticate = (req: any, res: any, next: any) => {
-    const token = req.cookies.token;
-    if (!token) return res.status(401).json({ error: "Unauthorized" });
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      req.user = decoded;
-      next();
-    } catch (e) {
-      res.status(401).json({ error: "Invalid token" });
-    }
-  };
-
-  const isAdmin = (req: any, res: any, next: any) => {
-    if (req.user.role !== "super_admin" && req.user.role !== "admin") {
-      return res.status(403).json({ error: "Forbidden" });
-    }
+  // 2. Request Logger (Debug)
+  app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
     next();
-  };
-
-  // Auth Routes
-  app.get("/api/auth/login", (req, res) => {
-    res.send("Auth API is active. Please use POST to login.");
   });
 
-  app.post("/api/auth/login", (req, res) => {
+  // 3. API Router
+  const apiRouter = express.Router();
+
+  // Auth Routes
+  apiRouter.post("/auth/login", (req, res) => {
     const { email, password } = req.body;
     console.log(`Login attempt for: ${email}`);
+    
     const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as any;
     if (!user) {
       console.log(`User not found: ${email}`);
       return res.status(401).json({ error: "Invalid credentials" });
     }
+    
     const isMatch = bcrypt.compareSync(password, user.password_hash);
     if (!isMatch) {
       console.log(`Password mismatch for: ${email}`);
       return res.status(401).json({ error: "Invalid credentials" });
     }
+    
     console.log(`Login successful for: ${email}`);
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: "24h" });
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role, name: user.name }, 
+      JWT_SECRET, 
+      { expiresIn: "24h" }
+    );
+    
     res.cookie("token", token, { httpOnly: true, sameSite: "strict" });
     res.json({ id: user.id, email: user.email, role: user.role, name: user.name });
   });
 
-  app.post("/api/logout", (req, res) => {
+  apiRouter.post("/auth/logout", (req, res) => {
     res.clearCookie("token");
     res.json({ success: true });
   });
 
-  app.get("/api/me", authenticate, (req: any, res) => {
+  // CRM Data Routes
+  apiRouter.get("/me", authenticate, (req: any, res) => {
     res.json(req.user);
   });
 
-  // User Management (Admin only)
-  app.get("/api/admin/users", authenticate, isAdmin, (req: any, res) => {
-    const users = db.prepare("SELECT id, email, name, role, created_at FROM users").all();
-    res.json(users);
-  });
-
-  app.post("/api/admin/users", authenticate, isAdmin, (req: any, res) => {
-    const { email, password, name, role } = req.body;
-    const hash = bcrypt.hashSync(password, 10);
-    try {
-      db.prepare("INSERT INTO users (id, email, password_hash, name, role) VALUES (?, ?, ?, ?, ?)")
-        .run(crypto.randomUUID(), email, hash, name, role);
-      res.json({ success: true });
-    } catch (e) {
-      res.status(400).json({ error: "User already exists" });
-    }
-  });
-
-  // CRM API Routes
-  app.get("/api/stats", authenticate, (req: any, res) => {
+  apiRouter.get("/stats", authenticate, (req: any, res) => {
     const leadCount = db.prepare("SELECT COUNT(*) as count FROM customers WHERE status = 'lead'").get() as any;
     const dealValue = db.prepare("SELECT SUM(value) as total FROM deals WHERE stage != 'closed_lost'").get() as any;
     const taskCount = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status != 'done'").get() as any;
@@ -135,12 +131,12 @@ async function startServer() {
     });
   });
 
-  app.get("/api/leads", authenticate, (req: any, res) => {
+  apiRouter.get("/leads", authenticate, (req: any, res) => {
     const leads = db.prepare("SELECT * FROM customers ORDER BY created_at DESC LIMIT 50").all();
     res.json(leads);
   });
 
-  app.get("/api/deals", authenticate, (req: any, res) => {
+  apiRouter.get("/deals", authenticate, (req: any, res) => {
     const deals = db.prepare(`
       SELECT d.*, c.first_name, c.last_name, c.company 
       FROM deals d 
@@ -150,7 +146,33 @@ async function startServer() {
     res.json(deals);
   });
 
-  // Vite middleware for development
+  // Admin Routes
+  apiRouter.get("/admin/users", authenticate, isAdmin, (req: any, res) => {
+    const users = db.prepare("SELECT id, email, name, role, created_at FROM users").all();
+    res.json(users);
+  });
+
+  apiRouter.post("/admin/users", authenticate, isAdmin, (req: any, res) => {
+    const { email, password, name, role } = req.body;
+    const hash = bcrypt.hashSync(password, 10);
+    try {
+      db.prepare("INSERT INTO users (id, email, password_hash, name, role) VALUES (?, ?, ?, ?, ?)")
+        .run(crypto.randomUUID(), email, hash, name, role);
+      res.json({ success: true });
+    } catch (e) {
+      res.status(400).json({ error: "User already exists" });
+    }
+  });
+
+  // Mount API Router
+  app.use("/api", apiRouter);
+
+  // 4. API 404 Fallback (Prevent Vite from handling missing API routes)
+  app.use("/api/*", (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
+  });
+
+  // 5. Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
