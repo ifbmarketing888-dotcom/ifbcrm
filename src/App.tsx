@@ -10,56 +10,120 @@ import {
   Search,
   LogOut,
   UserPlus,
-  Shield
+  Shield,
+  Plus,
+  TrendingUp,
+  Clock
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { cn } from "./lib/utils";
+
+// --- Mock Data & LocalStorage Logic ---
+
+const STORAGE_KEYS = {
+  USER: "crm_user",
+  LEADS: "crm_leads",
+  DEALS: "crm_deals",
+  TASKS: "crm_tasks"
+};
+
+const INITIAL_LEADS = [
+  { id: "1", first_name: "Alex", last_name: "Rivera", email: "alex@stellar.com", company: "Stellar Tech", status: "lead", score: 85, created_at: new Date().toISOString() },
+  { id: "2", first_name: "Sarah", last_name: "Chen", email: "sarah@nexus.com", company: "Nexus Labs", status: "contacted", score: 92, created_at: new Date().toISOString() },
+  { id: "3", first_name: "Marcus", last_name: "Thorne", email: "marcus@vanguard.com", company: "Vanguard", status: "qualified", score: 78, created_at: new Date().toISOString() },
+];
+
+const INITIAL_DEALS = [
+  { id: "1", customer_id: "1", title: "Enterprise License", value: 12000, stage: "discovery", probability: 20, updated_at: new Date().toISOString() },
+  { id: "2", customer_id: "2", title: "Cloud Migration", value: 45000, stage: "proposal", probability: 60, updated_at: new Date().toISOString() },
+];
+
+const INITIAL_TASKS = [
+  { id: "1", title: "Follow up with Alex", status: "todo", priority: "high", due_date: new Date().toISOString() },
+  { id: "2", title: "Send proposal to Sarah", status: "in_progress", priority: "medium", due_date: new Date().toISOString() },
+];
 
 // --- Auth Context / State ---
 const useAuth = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const checkAuth = async () => {
-    try {
-      const res = await fetch("/api/me");
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data);
-      } else {
-        setUser(null);
-      }
-    } catch (e) {
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    checkAuth();
+    const savedUser = localStorage.getItem(STORAGE_KEYS.USER);
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+    setLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setUser(data);
+    // Simplest Login: Any email with password "admin123"
+    if (password === "admin123") {
+      const userData = { 
+        id: "admin-1", 
+        email, 
+        name: email.split('@')[0], 
+        role: "admin" 
+      };
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(userData));
+      setUser(userData);
       return true;
     }
     return false;
   };
 
-  const logout = async () => {
-    await fetch("/api/logout", { method: "POST" });
+  const logout = () => {
+    localStorage.removeItem(STORAGE_KEYS.USER);
     setUser(null);
   };
 
-  return { user, loading, login, logout, checkAuth };
+  return { user, loading, login, logout };
+};
+
+// --- Data Hook ---
+const useCRMData = () => {
+  const [leads, setLeads] = useState<any[]>([]);
+  const [deals, setDeals] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
+
+  useEffect(() => {
+    const savedLeads = localStorage.getItem(STORAGE_KEYS.LEADS);
+    const savedDeals = localStorage.getItem(STORAGE_KEYS.DEALS);
+    const savedTasks = localStorage.getItem(STORAGE_KEYS.TASKS);
+
+    if (!savedLeads) {
+      localStorage.setItem(STORAGE_KEYS.LEADS, JSON.stringify(INITIAL_LEADS));
+      setLeads(INITIAL_LEADS);
+    } else {
+      setLeads(JSON.parse(savedLeads));
+    }
+
+    if (!savedDeals) {
+      localStorage.setItem(STORAGE_KEYS.DEALS, JSON.stringify(INITIAL_DEALS));
+      setDeals(INITIAL_DEALS);
+    } else {
+      setDeals(JSON.parse(savedDeals));
+    }
+
+    if (!savedTasks) {
+      localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(INITIAL_TASKS));
+      setTasks(INITIAL_TASKS);
+    } else {
+      setTasks(JSON.parse(savedTasks));
+    }
+  }, []);
+
+  const stats = useMemo(() => {
+    const pipelineValue = deals.reduce((acc, d) => acc + d.value, 0);
+    const pendingTasks = tasks.filter(t => t.status !== "done").length;
+    return {
+      leads: leads.length,
+      pipelineValue,
+      pendingTasks
+    };
+  }, [leads, deals, tasks]);
+
+  return { leads, deals, tasks, stats };
 };
 
 // --- Components ---
@@ -72,7 +136,7 @@ const Login = ({ onLogin }: any) => {
   const handleSubmit = async (e: any) => {
     e.preventDefault();
     const success = await onLogin(email, password);
-    if (!success) setError("Invalid email or password");
+    if (!success) setError("Invalid credentials (Hint: use password 'admin123')");
   };
 
   return (
@@ -82,8 +146,8 @@ const Login = ({ onLogin }: any) => {
           <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center mx-auto mb-4">
             <div className="w-6 h-6 border-2 border-white rounded-sm rotate-45" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Welcome to EdgeCRM</h1>
-          <p className="text-zinc-500 text-sm">Please sign in to access your dashboard</p>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">EdgeCRM Lite</h1>
+          <p className="text-zinc-500 text-sm">Simplest Cloudflare-Ready CRM</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -106,7 +170,7 @@ const Login = ({ onLogin }: any) => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-black/5 focus:border-black outline-none transition-all"
-              placeholder="••••••••"
+              placeholder="admin123"
             />
           </div>
           {error && <p className="text-red-500 text-xs font-medium">{error}</p>}
@@ -119,118 +183,15 @@ const Login = ({ onLogin }: any) => {
         </form>
         
         <p className="text-center text-xs text-zinc-400">
-          Restricted Access. Contact management for credentials.
+          Pure Frontend Mode. Data stored in your browser.
         </p>
       </div>
     </div>
   );
 };
 
-const UserManagement = () => {
-  const [users, setUsers] = useState([]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newEmail, setNewEmail] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState("user");
-
-  const fetchUsers = async () => {
-    const res = await fetch("/api/admin/users");
-    if (res.ok) setUsers(await res.json());
-  };
-
-  useEffect(() => { fetchUsers(); }, []);
-
-  const handleAddUser = async (e: any) => {
-    e.preventDefault();
-    const res = await fetch("/api/admin/users", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: newEmail, password: newPassword, name: newName, role: newRole }),
-    });
-    if (res.ok) {
-      setShowAdd(false);
-      fetchUsers();
-      setNewEmail(""); setNewPassword(""); setNewName("");
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-end">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
-          <p className="text-muted-foreground">Manage team access and roles.</p>
-        </div>
-        <button 
-          onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors"
-        >
-          <UserPlus className="w-4 h-4" /> Add User
-        </button>
-      </div>
-
-      {showAdd && (
-        <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm animate-in fade-in slide-in-from-top-4">
-          <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input placeholder="Full Name" value={newName} onChange={e => setNewName(e.target.value)} className="px-4 py-2 border rounded-lg" required />
-            <input placeholder="Email" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="px-4 py-2 border rounded-lg" required />
-            <input placeholder="Password" type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="px-4 py-2 border rounded-lg" required />
-            <select value={newRole} onChange={e => setNewRole(e.target.value)} className="px-4 py-2 border rounded-lg">
-              <option value="user">User</option>
-              <option value="sales">Sales</option>
-              <option value="admin">Admin</option>
-            </select>
-            <div className="md:col-span-2 flex gap-2">
-              <button type="submit" className="bg-black text-white px-4 py-2 rounded-lg text-sm font-medium">Create User</button>
-              <button type="button" onClick={() => setShowAdd(false)} className="bg-zinc-100 px-4 py-2 rounded-lg text-sm font-medium">Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-zinc-50 border-b border-zinc-100">
-            <tr>
-              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Name</th>
-              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Email</th>
-              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Role</th>
-              <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400">Created</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100">
-            {users.map((u: any) => (
-              <tr key={u.id} className="hover:bg-zinc-50 transition-colors">
-                <td className="px-6 py-4 text-sm font-medium">{u.name}</td>
-                <td className="px-6 py-4 text-sm text-zinc-500">{u.email}</td>
-                <td className="px-6 py-4">
-                  <span className={cn(
-                    "px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider",
-                    u.role === "super_admin" ? "bg-purple-100 text-purple-700" :
-                    u.role === "admin" ? "bg-blue-100 text-blue-700" : "bg-zinc-100 text-zinc-600"
-                  )}>
-                    {u.role}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm text-zinc-400">{new Date(u.created_at).toLocaleDateString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-// --- Existing Pages (Updated with Auth) ---
-
 const Dashboard = () => {
-  const [stats, setStats] = useState<any>(null);
-
-  useEffect(() => {
-    fetch("/api/stats").then(r => r.json()).then(setStats);
-  }, []);
+  const { leads, stats } = useCRMData();
 
   return (
     <div className="space-y-6">
@@ -240,17 +201,17 @@ const Dashboard = () => {
           <p className="text-muted-foreground">Welcome back, here's what's happening today.</p>
         </div>
         <div className="flex gap-2">
-          <button className="bg-black text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors">
-            Add Lead
+          <button className="bg-black text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors flex items-center gap-2">
+            <Plus className="w-4 h-4" /> Add Lead
           </button>
         </div>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
-          { label: "Active Leads", value: stats?.leads || "0", trend: "+12%", icon: Users },
-          { label: "Pipeline Value", value: `$${stats?.pipelineValue || "0"}`, trend: "+5.4%", icon: Briefcase },
-          { label: "Tasks Due", value: stats?.pendingTasks || "0", trend: "-2", icon: CheckSquare },
+          { label: "Active Leads", value: stats.leads, trend: "+12%", icon: Users },
+          { label: "Pipeline Value", value: `$${stats.pipelineValue.toLocaleString()}`, trend: "+5.4%", icon: Briefcase },
+          { label: "Tasks Due", value: stats.pendingTasks, trend: "-2", icon: CheckSquare },
         ].map((stat) => (
           <div key={stat.label} className="p-6 bg-white border border-zinc-200 rounded-2xl shadow-sm space-y-2">
             <div className="flex justify-between items-start">
@@ -268,36 +229,50 @@ const Dashboard = () => {
         ))}
       </div>
 
-      <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="p-6 border-bottom border-zinc-100 flex justify-between items-center">
-          <h3 className="font-semibold">Recent Leads</h3>
-          <Link to="/leads" className="text-sm text-zinc-500 hover:text-black">View all</Link>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-zinc-100 flex justify-between items-center">
+            <h3 className="font-semibold">Recent Leads</h3>
+            <Link to="/leads" className="text-sm text-zinc-500 hover:text-black">View all</Link>
+          </div>
+          <div className="divide-y divide-zinc-100">
+            {leads.slice(0, 5).map((lead) => (
+              <div key={lead.id} className="p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors cursor-pointer">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center font-bold text-zinc-600">
+                    {lead.first_name[0]}
+                  </div>
+                  <div>
+                    <p className="font-medium text-sm">{lead.first_name} {lead.last_name}</p>
+                    <p className="text-xs text-zinc-500">{lead.company}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-xs font-medium px-2 py-1 bg-zinc-100 rounded-md capitalize">{lead.status}</span>
+                  <div className="text-right">
+                    <p className="text-xs font-bold text-emerald-600">{lead.score}</p>
+                    <p className="text-[10px] text-zinc-400 uppercase tracking-wider">Score</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="divide-y divide-zinc-100">
-          {[
-            { name: "Alex Rivera", company: "Stellar Tech", status: "New", score: 85 },
-            { name: "Sarah Chen", company: "Nexus Labs", status: "Contacted", score: 92 },
-            { name: "Marcus Thorne", company: "Vanguard", status: "Qualified", score: 78 },
-          ].map((lead) => (
-            <div key={lead.name} className="p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors cursor-pointer">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center font-bold text-zinc-600">
-                  {lead.name[0]}
-                </div>
-                <div>
-                  <p className="font-medium text-sm">{lead.name}</p>
-                  <p className="text-xs text-zinc-500">{lead.company}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-xs font-medium px-2 py-1 bg-zinc-100 rounded-md">{lead.status}</span>
-                <div className="text-right">
-                  <p className="text-xs font-bold text-emerald-600">{lead.score}</p>
-                  <p className="text-[10px] text-zinc-400 uppercase tracking-wider">Score</p>
-                </div>
-              </div>
-            </div>
-          ))}
+
+        <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm p-6 space-y-4">
+          <h3 className="font-semibold">Quick Actions</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <button className="p-4 border border-zinc-100 rounded-xl hover:bg-zinc-50 transition-all text-left space-y-2">
+              <TrendingUp className="w-5 h-5 text-blue-500" />
+              <p className="text-sm font-bold">New Deal</p>
+              <p className="text-xs text-zinc-500">Create a new sales opportunity</p>
+            </button>
+            <button className="p-4 border border-zinc-100 rounded-xl hover:bg-zinc-50 transition-all text-left space-y-2">
+              <Clock className="w-5 h-5 text-purple-500" />
+              <p className="text-sm font-bold">Log Activity</p>
+              <p className="text-xs text-zinc-500">Record a call or meeting</p>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -327,8 +302,6 @@ export default function App() {
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   if (!user) return <Login onLogin={login} />;
 
-  const isAdmin = user.role === "super_admin" || user.role === "admin";
-
   return (
     <div className="min-h-screen bg-[#F9F9F9] flex">
       {/* Sidebar */}
@@ -349,9 +322,6 @@ export default function App() {
             <SidebarItem to="/leads" icon={Users} label="Leads" active={location.pathname === "/leads"} />
             <SidebarItem to="/deals" icon={Briefcase} label="Deals" active={location.pathname === "/deals"} />
             <SidebarItem to="/tasks" icon={CheckSquare} label="Tasks" active={location.pathname === "/tasks"} />
-            {isAdmin && (
-              <SidebarItem to="/admin/users" icon={Shield} label="Team" active={location.pathname === "/admin/users"} />
-            )}
           </nav>
 
           <div className="pt-6 border-t border-zinc-100 space-y-1">
@@ -405,7 +375,6 @@ export default function App() {
             <Route path="/deals" element={<div className="text-3xl font-bold">Deals Page</div>} />
             <Route path="/tasks" element={<div className="text-3xl font-bold">Tasks Page</div>} />
             <Route path="/settings" element={<div className="text-3xl font-bold">Settings Page</div>} />
-            {isAdmin && <Route path="/admin/users" element={<UserManagement />} />}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
