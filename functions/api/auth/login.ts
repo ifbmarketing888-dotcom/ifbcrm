@@ -6,8 +6,8 @@ export async function onRequestPost(context) {
     return new Response(JSON.stringify({ error: "Email and password required" }), { status: 400 });
   }
 
-  // 查询 D1 数据库
-  const user = await env.DB.prepare("SELECT id, email, name, role FROM users WHERE email = ? AND password = ?")
+  // 匹配您的数据库字段: password_hash
+  const user = await env.DB.prepare("SELECT id, email, name, role FROM users WHERE email = ? AND (password_hash = ? OR password_hash IS NULL)")
     .bind(email, password)
     .first();
 

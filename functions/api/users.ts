@@ -9,7 +9,7 @@ export async function onRequestPost(context) {
   const { name, email, password, role } = await request.json();
   const id = crypto.randomUUID();
 
-  await env.DB.prepare("INSERT INTO users (id, name, email, password, role) VALUES (?, ?, ?, ?, ?)")
+  await env.DB.prepare("INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)")
     .bind(id, name, email, password, role)
     .run();
 
