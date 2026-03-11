@@ -16,10 +16,11 @@ const schema = fs.readFileSync("schema.sql", "utf8");
 db.exec(schema);
 
 // Migration: Ensure password_hash column exists
-try {
-  db.prepare("SELECT password_hash FROM users LIMIT 1").get();
-} catch (e) {
-  console.log("Adding password_hash column to users table...");
+const tableInfo = db.prepare("PRAGMA table_info(users)").all() as any[];
+const hasPasswordColumn = tableInfo.some(col => col.name === 'password_hash');
+
+if (!hasPasswordColumn) {
+  console.log("Migration: Adding password_hash column to users table...");
   db.prepare("ALTER TABLE users ADD COLUMN password_hash TEXT").run();
 }
 
@@ -28,17 +29,17 @@ const seedSuperAdmin = () => {
   const email = "ifbmarketing888@gmail.com";
   const password = "Ifb@888!";
   const hash = bcrypt.hashSync(password, 10);
+  
   const existing = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as any;
   
   if (!existing) {
+    console.log("Seeding: Creating new Super Admin...");
     db.prepare("INSERT INTO users (id, email, password_hash, name, role) VALUES (?, ?, ?, ?, ?)")
-      .run(Math.random().toString(36).substring(7), email, hash, "Super Admin", "super_admin");
-    console.log("Super Admin created successfully.");
+      .run("admin-1", email, hash, "Super Admin", "super_admin");
   } else {
-    // Force update password and role to ensure access
+    console.log("Seeding: Updating existing Super Admin credentials...");
     db.prepare("UPDATE users SET password_hash = ?, role = 'super_admin' WHERE email = ?")
       .run(hash, email);
-    console.log("Super Admin credentials verified/updated.");
   }
 };
 seedSuperAdmin();
