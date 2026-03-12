@@ -60,7 +60,7 @@ async function startServer() {
 
   app.get("/api/leads", (req, res) => {
     try {
-      const results = db.prepare("SELECT * FROM leads").all();
+      const results = db.prepare("SELECT * FROM leads ORDER BY created_at DESC").all();
       res.json(results);
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -81,7 +81,7 @@ async function startServer() {
 
   app.get("/api/deals", (req, res) => {
     try {
-      const results = db.prepare("SELECT * FROM deals").all();
+      const results = db.prepare("SELECT * FROM deals ORDER BY updated_at DESC").all();
       res.json(results);
     } catch (e) {
       res.status(500).json({ error: e.message });
@@ -121,7 +121,7 @@ async function startServer() {
 
   app.get("/api/tasks", (req, res) => {
     try {
-      const results = db.prepare("SELECT * FROM tasks").all();
+      const results = db.prepare("SELECT * FROM tasks ORDER BY created_at DESC").all();
       res.json(results);
     } catch (e) {
       res.status(500).json({ error: e.message });

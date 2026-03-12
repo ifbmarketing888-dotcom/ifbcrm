@@ -18,8 +18,9 @@ import {
   Activity,
   MoreHorizontal
 } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, createContext, useContext, useCallback } from "react";
 import { cn } from "./lib/utils";
+import { motion, AnimatePresence } from "motion/react";
 
 // --- Mock Data & LocalStorage Logic ---
 
@@ -94,8 +95,10 @@ const useAuth = () => {
   return { user, loading, login, logout };
 };
 
-// --- Data Hook ---
-const useCRMData = () => {
+// --- Data Context ---
+const CRMContext = createContext<any>(null);
+
+export const CRMProvider = ({ children }: { children: React.ReactNode }) => {
   const [leads, setLeads] = useState<any[]>([]);
   const [deals, setDeals] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
@@ -103,7 +106,7 @@ const useCRMData = () => {
   const [stats, setStats] = useState({ leads: 0, pipelineValue: 0, pendingTasks: 0 });
   const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [leadsRes, dealsRes, tasksRes, usersRes, statsRes] = await Promise.all([
         fetch("/api/leads"),
@@ -123,11 +126,11 @@ const useCRMData = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const addUser = async (newUser: any) => {
     const res = await fetch("/api/users", {
@@ -135,7 +138,7 @@ const useCRMData = () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newUser),
     });
-    if (res.ok) fetchData();
+    if (res.ok) await fetchData();
   };
 
   const addLead = async (newLead: any) => {
@@ -144,7 +147,7 @@ const useCRMData = () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newLead),
     });
-    if (res.ok) fetchData();
+    if (res.ok) await fetchData();
   };
 
   const convertToDeal = async (leadId: string, title: string, value: number, stage: string) => {
@@ -153,7 +156,7 @@ const useCRMData = () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lead_id: leadId, title, value, stage }),
     });
-    if (res.ok) fetchData();
+    if (res.ok) await fetchData();
   };
 
   const updateDealStatus = async (dealId: string, stage: 'won' | 'lost') => {
@@ -162,7 +165,7 @@ const useCRMData = () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: dealId, stage }),
     });
-    if (res.ok) fetchData();
+    if (res.ok) await fetchData();
   };
 
   const updateTaskStatus = async (taskId: string, status: string) => {
@@ -171,7 +174,7 @@ const useCRMData = () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: taskId, status }),
     });
-    if (res.ok) fetchData();
+    if (res.ok) await fetchData();
   };
 
   const addTask = async (newTask: any) => {
@@ -180,10 +183,22 @@ const useCRMData = () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newTask),
     });
-    if (res.ok) fetchData();
+    if (res.ok) await fetchData();
   };
 
-  return { leads, deals, tasks, users, stats, loading, addUser, addLead, convertToDeal, updateDealStatus, updateTaskStatus, addTask, refresh: fetchData };
+  const value = {
+    leads, deals, tasks, users, stats, loading,
+    addUser, addLead, convertToDeal, updateDealStatus, updateTaskStatus, addTask,
+    refresh: fetchData
+  };
+
+  return <CRMContext.Provider value={value}>{children}</CRMContext.Provider>;
+};
+
+const useCRMData = () => {
+  const context = useContext(CRMContext);
+  if (!context) throw new Error("useCRMData must be used within a CRMProvider");
+  return context;
 };
 
 // --- Components ---
@@ -822,45 +837,72 @@ const TasksPage = () => {
 
       <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="divide-y divide-zinc-100">
-          {filteredAndSortedTasks.length > 0 ? filteredAndSortedTasks.map((task: any) => (
-            <div key={task.id} className="p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors">
-              <div className="flex items-center gap-3">
-                <div className={cn(
-                  "w-2 h-2 rounded-full",
-                  task.priority === 'high' ? "bg-rose-500" : 
-                  task.priority === 'medium' ? "bg-amber-500" : "bg-blue-500"
-                )} />
-                <p className={cn("text-sm font-medium", task.status === 'done' && "line-through text-zinc-400")}>{task.title}</p>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1 text-xs text-zinc-400">
-                  <Clock className="w-3 h-3" />
-                  {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
-                </div>
-                <span className={cn(
-                  "px-2 py-1 rounded-md text-[10px] font-bold uppercase",
-                  task.status === 'done' ? "bg-emerald-100 text-emerald-700" : 
-                  task.status === 'in_progress' ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"
-                )}>
-                  {task.status.replace('_', ' ')}
-                </span>
-                {task.status !== 'done' && (
-                  <button 
-                    onClick={() => updateTaskStatus(task.id, 'done')}
-                    className="p-1 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors"
-                    title="Mark as Done"
+          <AnimatePresence mode="popLayout">
+            {filteredAndSortedTasks.length > 0 ? filteredAndSortedTasks.map((task: any) => (
+              <motion.div 
+                key={task.id} 
+                layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2 }}
+                className="p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <motion.div 
+                    layout
+                    className={cn(
+                      "w-2 h-2 rounded-full",
+                      task.priority === 'high' ? "bg-rose-500" : 
+                      task.priority === 'medium' ? "bg-amber-500" : "bg-blue-500"
+                    )} 
+                  />
+                  <motion.p 
+                    layout
+                    className={cn("text-sm font-medium transition-all duration-500", task.status === 'done' && "line-through text-zinc-400")}
                   >
-                    <CheckSquare className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )) : (
-            <div className="p-12 text-center text-zinc-400">
-              <CheckSquare className="w-12 h-12 mx-auto mb-4 opacity-20" />
-              <p>No tasks found matching your filters</p>
-            </div>
-          )}
+                    {task.title}
+                  </motion.p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1 text-xs text-zinc-400">
+                    <Clock className="w-3 h-3" />
+                    {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
+                  </div>
+                  <motion.span 
+                    layout
+                    className={cn(
+                      "px-2 py-1 rounded-md text-[10px] font-bold uppercase transition-colors duration-300",
+                      task.status === 'done' ? "bg-emerald-100 text-emerald-700" : 
+                      task.status === 'in_progress' ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"
+                    )}
+                  >
+                    {task.status.replace('_', ' ')}
+                  </motion.span>
+                  {task.status !== 'done' && (
+                    <motion.button 
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => updateTaskStatus(task.id, 'done')}
+                      className="p-1 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors"
+                      title="Mark as Done"
+                    >
+                      <CheckSquare className="w-4 h-4" />
+                    </motion.button>
+                  )}
+                </div>
+              </motion.div>
+            )) : (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="p-12 text-center text-zinc-400"
+              >
+                <CheckSquare className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                <p>No tasks found matching your filters</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>
@@ -878,7 +920,8 @@ export default function App() {
   const isAdmin = user.role === "admin";
 
   return (
-    <div className="min-h-screen bg-[#F9F9F9] flex">
+    <CRMProvider>
+      <div className="min-h-screen bg-[#F9F9F9] flex">
       {/* Sidebar */}
       <aside className={cn(
         "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-zinc-200 transition-transform duration-300 transform lg:relative lg:translate-x-0",
@@ -959,5 +1002,6 @@ export default function App() {
         </div>
       </main>
     </div>
+    </CRMProvider>
   );
 }
