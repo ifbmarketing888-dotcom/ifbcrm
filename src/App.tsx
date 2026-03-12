@@ -147,11 +147,11 @@ const useCRMData = () => {
     if (res.ok) fetchData();
   };
 
-  const convertToDeal = async (leadId: string, title: string, value: number) => {
+  const convertToDeal = async (leadId: string, title: string, value: number, stage: string) => {
     const res = await fetch("/api/deals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lead_id: leadId, title, value, stage: 'discovery' }),
+      body: JSON.stringify({ lead_id: leadId, title, value, stage }),
     });
     if (res.ok) fetchData();
   };
@@ -174,7 +174,16 @@ const useCRMData = () => {
     if (res.ok) fetchData();
   };
 
-  return { leads, deals, tasks, users, stats, loading, addUser, addLead, convertToDeal, updateDealStatus, updateTaskStatus, refresh: fetchData };
+  const addTask = async (newTask: any) => {
+    const res = await fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newTask),
+    });
+    if (res.ok) fetchData();
+  };
+
+  return { leads, deals, tasks, users, stats, loading, addUser, addLead, convertToDeal, updateDealStatus, updateTaskStatus, addTask, refresh: fetchData };
 };
 
 // --- Components ---
@@ -448,6 +457,8 @@ const SidebarItem = ({ to, icon: Icon, label, active }: any) => (
 const CustomersPage = () => {
   const { leads, addLead, convertToDeal } = useCRMData();
   const [showAdd, setShowAdd] = useState(false);
+  const [convertingLead, setConvertingLead] = useState<any>(null);
+  const [convertData, setConvertData] = useState({ title: "", value: "1000", stage: "discovery" });
   const [formData, setFormData] = useState({ first_name: "", last_name: "", email: "", company: "", status: "lead", score: 50 });
 
   const handleSubmit = (e: any) => {
@@ -457,13 +468,22 @@ const CustomersPage = () => {
     setFormData({ first_name: "", last_name: "", email: "", company: "", status: "lead", score: 50 });
   };
 
-  const handleConvert = (lead: any) => {
-    const title = prompt("Enter Deal Title:", `Deal for ${lead.company}`);
-    const value = prompt("Enter Deal Value ($):", "1000");
-    if (title && value) {
-      convertToDeal(lead.id, title, parseFloat(value));
-      alert("Converted to Deal successfully!");
+  const handleConvertSubmit = (e: any) => {
+    e.preventDefault();
+    if (convertingLead) {
+      convertToDeal(convertingLead.id, convertData.title, parseFloat(convertData.value), convertData.stage);
+      setConvertingLead(null);
+      setConvertData({ title: "", value: "1000", stage: "discovery" });
     }
+  };
+
+  const startConvert = (lead: any) => {
+    setConvertingLead(lead);
+    setConvertData({ 
+      title: `Deal for ${lead.company}`, 
+      value: "1000", 
+      stage: "discovery" 
+    });
   };
 
   return (
@@ -496,6 +516,53 @@ const CustomersPage = () => {
         </div>
       )}
 
+      {convertingLead && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <h3 className="text-xl font-bold mb-4">Convert to Deal</h3>
+            <form onSubmit={handleConvertSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-zinc-400 mb-1">Deal Title</label>
+                <input 
+                  required
+                  value={convertData.title}
+                  onChange={e => setConvertData({...convertData, title: e.target.value})}
+                  className="w-full px-4 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-zinc-400 mb-1">Value ($)</label>
+                <input 
+                  required
+                  type="number"
+                  value={convertData.value}
+                  onChange={e => setConvertData({...convertData, value: e.target.value})}
+                  className="w-full px-4 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-zinc-400 mb-1">Initial Stage</label>
+                <select 
+                  value={convertData.stage}
+                  onChange={e => setConvertData({...convertData, stage: e.target.value})}
+                  className="w-full px-4 py-2 border rounded-lg"
+                >
+                  <option value="discovery">Discovery</option>
+                  <option value="proposal">Proposal</option>
+                  <option value="negotiation">Negotiation</option>
+                  <option value="won">Closed Won</option>
+                  <option value="lost">Closed Lost</option>
+                </select>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="submit" className="flex-1 bg-black text-white px-4 py-2 rounded-lg font-medium">Convert</button>
+                <button type="button" onClick={() => setConvertingLead(null)} className="flex-1 bg-zinc-100 px-4 py-2 rounded-lg font-medium">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
         <table className="w-full text-left">
           <thead className="bg-zinc-50 border-b border-zinc-100">
@@ -519,7 +586,7 @@ const CustomersPage = () => {
                 </td>
                 <td className="px-6 py-4">
                   <button 
-                    onClick={() => handleConvert(lead)}
+                    onClick={() => startConvert(lead)}
                     className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
                   >
                     <TrendingUp className="w-3 h-3" /> Convert to Deal
@@ -590,7 +657,57 @@ const DealsPage = () => {
 };
 
 const TasksPage = () => {
-  const { tasks, updateTaskStatus } = useCRMData();
+  const { tasks, updateTaskStatus, addTask } = useCRMData();
+  const [showAdd, setShowAdd] = useState(false);
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [sortBy, setSortBy] = useState("due_date");
+  const [sortOrder, setSortOrder] = useState("asc");
+
+  const [formData, setFormData] = useState({
+    title: "",
+    priority: "medium",
+    due_date: new Date().toISOString().split('T')[0]
+  });
+
+  const filteredAndSortedTasks = useMemo(() => {
+    let result = [...tasks];
+
+    // Filter
+    if (filterStatus !== "all") {
+      result = result.filter(t => t.status === filterStatus);
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === "due_date") {
+        const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+        const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+        comparison = dateA - dateB;
+      } else if (sortBy === "priority") {
+        const priorityMap: any = { high: 3, medium: 2, low: 1 };
+        comparison = priorityMap[b.priority] - priorityMap[a.priority];
+      } else if (sortBy === "status") {
+        const statusMap: any = { todo: 1, in_progress: 2, done: 3 };
+        comparison = statusMap[a.status] - statusMap[b.status];
+      }
+
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
+
+    return result;
+  }, [tasks, filterStatus, sortBy, sortOrder]);
+
+  const handleSubmit = (e: any) => {
+    e.preventDefault();
+    addTask(formData);
+    setShowAdd(false);
+    setFormData({
+      title: "",
+      priority: "medium",
+      due_date: new Date().toISOString().split('T')[0]
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -599,26 +716,133 @@ const TasksPage = () => {
           <h1 className="text-3xl font-bold tracking-tight">Tasks</h1>
           <p className="text-muted-foreground">Stay on top of your to-do list.</p>
         </div>
+        <button 
+          onClick={() => setShowAdd(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-xl hover:bg-zinc-800 transition-colors text-sm font-medium"
+        >
+          <Plus className="w-4 h-4" /> New Task
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="p-6 bg-white border border-zinc-200 rounded-2xl shadow-sm space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="font-semibold">Create New Task</h3>
+            <button onClick={() => setShowAdd(false)} className="text-zinc-400 hover:text-black">
+              <MoreHorizontal className="w-5 h-5" />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-1">
+              <label className="block text-xs font-bold uppercase text-zinc-400 mb-1">Task Title</label>
+              <input 
+                required
+                type="text" 
+                value={formData.title}
+                onChange={(e) => setFormData({...formData, title: e.target.value})}
+                placeholder="What needs to be done?"
+                className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/5"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase text-zinc-400 mb-1">Priority</label>
+              <select 
+                value={formData.priority}
+                onChange={(e) => setFormData({...formData, priority: e.target.value})}
+                className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/5"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase text-zinc-400 mb-1">Due Date</label>
+              <input 
+                type="date" 
+                value={formData.due_date}
+                onChange={(e) => setFormData({...formData, due_date: e.target.value})}
+                className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/5"
+              />
+            </div>
+            <div className="md:col-span-3 flex justify-end gap-3 pt-2">
+              <button 
+                type="button"
+                onClick={() => setShowAdd(false)}
+                className="px-4 py-2 text-sm font-medium text-zinc-600 hover:text-black"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit"
+                className="px-4 py-2 bg-black text-white rounded-lg hover:bg-zinc-800 transition-colors text-sm font-medium"
+              >
+                Create Task
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Filter and Sort Bar */}
+      <div className="flex flex-wrap gap-4 items-center bg-white p-4 border border-zinc-200 rounded-2xl shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold uppercase text-zinc-400">Filter:</span>
+          <select 
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="px-3 py-1.5 border border-zinc-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-black/5"
+          >
+            <option value="all">All Status</option>
+            <option value="todo">To Do</option>
+            <option value="in_progress">In Progress</option>
+            <option value="done">Done</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold uppercase text-zinc-400">Sort By:</span>
+          <select 
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="px-3 py-1.5 border border-zinc-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-black/5"
+          >
+            <option value="due_date">Due Date</option>
+            <option value="priority">Priority</option>
+            <option value="status">Status</option>
+          </select>
+          <button 
+            onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+            className="p-1.5 hover:bg-zinc-100 rounded-lg transition-colors"
+            title={sortOrder === "asc" ? "Ascending" : "Descending"}
+          >
+            <Activity className={cn("w-4 h-4 transition-transform", sortOrder === "desc" && "rotate-180")} />
+          </button>
+        </div>
       </div>
 
       <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="divide-y divide-zinc-100">
-          {tasks.length > 0 ? tasks.map((task: any) => (
+          {filteredAndSortedTasks.length > 0 ? filteredAndSortedTasks.map((task: any) => (
             <div key={task.id} className="p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors">
               <div className="flex items-center gap-3">
                 <div className={cn(
                   "w-2 h-2 rounded-full",
-                  task.priority === 'high' ? "bg-rose-500" : "bg-blue-500"
+                  task.priority === 'high' ? "bg-rose-500" : 
+                  task.priority === 'medium' ? "bg-amber-500" : "bg-blue-500"
                 )} />
                 <p className={cn("text-sm font-medium", task.status === 'done' && "line-through text-zinc-400")}>{task.title}</p>
               </div>
               <div className="flex items-center gap-4">
-                <span className="text-xs text-zinc-400">{new Date(task.due_date).toLocaleDateString()}</span>
+                <div className="flex items-center gap-1 text-xs text-zinc-400">
+                  <Clock className="w-3 h-3" />
+                  {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
+                </div>
                 <span className={cn(
                   "px-2 py-1 rounded-md text-[10px] font-bold uppercase",
-                  task.status === 'done' ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-600"
+                  task.status === 'done' ? "bg-emerald-100 text-emerald-700" : 
+                  task.status === 'in_progress' ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"
                 )}>
-                  {task.status}
+                  {task.status.replace('_', ' ')}
                 </span>
                 {task.status !== 'done' && (
                   <button 
@@ -634,7 +858,7 @@ const TasksPage = () => {
           )) : (
             <div className="p-12 text-center text-zinc-400">
               <CheckSquare className="w-12 h-12 mx-auto mb-4 opacity-20" />
-              <p>No tasks found</p>
+              <p>No tasks found matching your filters</p>
             </div>
           )}
         </div>
