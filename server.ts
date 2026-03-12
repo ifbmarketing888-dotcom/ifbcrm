@@ -15,6 +15,13 @@ const db = new Database("database.db");
 const schema = fs.readFileSync("schema.sql", "utf8");
 db.exec(schema);
 
+// Add notes column to leads if it doesn't exist
+try {
+  db.exec("ALTER TABLE leads ADD COLUMN notes TEXT");
+} catch (e) {
+  // Column might already exist
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -68,12 +75,24 @@ async function startServer() {
   });
 
   app.post("/api/leads", (req, res) => {
-    const { first_name, last_name, email, company, status, score } = req.body;
+    const { first_name, last_name, email, company, status, score, notes } = req.body;
     const id = randomUUID();
     try {
-      db.prepare("INSERT INTO leads (id, first_name, last_name, email, company, status, score) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        .run(id, first_name, last_name, email, company, status || 'lead', score || 0);
-      res.status(201).json({ id, first_name, last_name, email, company, status, score });
+      db.prepare("INSERT INTO leads (id, first_name, last_name, email, company, status, score, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(id, first_name, last_name, email, company, status || 'lead', score || 0, notes || '');
+      res.status(201).json({ id, first_name, last_name, email, company, status, score, notes });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch("/api/leads", (req, res) => {
+    const { id, notes } = req.body;
+    try {
+      if (notes !== undefined) {
+        db.prepare("UPDATE leads SET notes = ? WHERE id = ?").run(notes, id);
+      }
+      res.json({ success: true });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }

@@ -16,7 +16,9 @@ import {
   Clock,
   DollarSign,
   Activity,
-  MoreHorizontal
+  MoreHorizontal,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 import React, { useState, useEffect, useMemo, createContext, useContext, useCallback } from "react";
 import { cn } from "./lib/utils";
@@ -186,9 +188,18 @@ export const CRMProvider = ({ children }: { children: React.ReactNode }) => {
     if (res.ok) await fetchData();
   };
 
+  const updateLeadNotes = async (leadId: string, notes: string) => {
+    const res = await fetch("/api/leads", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: leadId, notes }),
+    });
+    if (res.ok) await fetchData();
+  };
+
   const value = {
     leads, deals, tasks, users, stats, loading,
-    addUser, addLead, convertToDeal, updateDealStatus, updateTaskStatus, addTask,
+    addUser, addLead, convertToDeal, updateDealStatus, updateTaskStatus, addTask, updateLeadNotes,
     refresh: fetchData
   };
 
@@ -470,11 +481,29 @@ const SidebarItem = ({ to, icon: Icon, label, active }: any) => (
 );
 
 const CustomersPage = () => {
-  const { leads, addLead, convertToDeal } = useCRMData();
+  const { leads, deals, addLead, convertToDeal, updateLeadNotes } = useCRMData();
   const [showAdd, setShowAdd] = useState(false);
   const [convertingLead, setConvertingLead] = useState<any>(null);
   const [convertData, setConvertData] = useState({ title: "", value: "1000", stage: "discovery" });
   const [formData, setFormData] = useState({ first_name: "", last_name: "", email: "", company: "", status: "lead", score: 50 });
+  const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
+  const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
+  const [tempNotes, setTempNotes] = useState("");
+
+  const handleNotesSave = (leadId: string) => {
+    updateLeadNotes(leadId, tempNotes);
+    setEditingNotesId(null);
+  };
+
+  const toggleExpand = (leadId: string) => {
+    if (expandedLeadId === leadId) {
+      setExpandedLeadId(null);
+      setEditingNotesId(null);
+    } else {
+      setExpandedLeadId(leadId);
+      setEditingNotesId(null);
+    }
+  };
 
   const handleSubmit = (e: any) => {
     e.preventDefault();
@@ -589,26 +618,123 @@ const CustomersPage = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            {leads.map((lead: any) => (
-              <tr key={lead.id} className="hover:bg-zinc-50 transition-colors">
-                <td className="px-6 py-4">
-                  <p className="text-sm font-medium">{lead.name || `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Unnamed'}</p>
-                  <p className="text-xs text-zinc-400">{lead.email}</p>
-                </td>
-                <td className="px-6 py-4 text-sm text-zinc-500">{lead.company}</td>
-                <td className="px-6 py-4">
-                  <span className="px-2 py-1 bg-zinc-100 rounded-md text-[10px] font-bold uppercase">{lead.status}</span>
-                </td>
-                <td className="px-6 py-4">
-                  <button 
-                    onClick={() => startConvert(lead)}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+            {leads.map((lead: any) => {
+              const isExpanded = expandedLeadId === lead.id;
+              const leadDeals = deals.filter((d: any) => d.lead_id === lead.id);
+
+              return (
+                <React.Fragment key={lead.id}>
+                  <tr 
+                    className={cn("hover:bg-zinc-50 transition-colors cursor-pointer", isExpanded && "bg-zinc-50")}
+                    onClick={() => toggleExpand(lead.id)}
                   >
-                    <TrendingUp className="w-3 h-3" /> Convert to Deal
-                  </button>
-                </td>
-              </tr>
-            ))}
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        {isExpanded ? <ChevronUp className="w-4 h-4 text-zinc-400" /> : <ChevronDown className="w-4 h-4 text-zinc-400" />}
+                        <div>
+                          <p className="text-sm font-medium">{lead.name || `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Unnamed'}</p>
+                          <p className="text-xs text-zinc-400">{lead.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-zinc-500">{lead.company}</td>
+                    <td className="px-6 py-4">
+                      <span className="px-2 py-1 bg-zinc-100 rounded-md text-[10px] font-bold uppercase">{lead.status}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startConvert(lead);
+                        }}
+                        className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                      >
+                        <TrendingUp className="w-3 h-3" /> Convert to Deal
+                      </button>
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-6 bg-zinc-50/50 border-t border-zinc-100">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                          {/* Notes Section */}
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-sm font-bold text-zinc-900">Notes</h4>
+                              {editingNotesId !== lead.id ? (
+                                <button 
+                                  onClick={() => {
+                                    setTempNotes(lead.notes || "");
+                                    setEditingNotesId(lead.id);
+                                  }}
+                                  className="text-xs font-medium text-zinc-500 hover:text-black"
+                                >
+                                  Edit
+                                </button>
+                              ) : (
+                                <div className="flex gap-2">
+                                  <button 
+                                    onClick={() => handleNotesSave(lead.id)}
+                                    className="text-xs font-medium text-emerald-600 hover:text-emerald-700"
+                                  >
+                                    Save
+                                  </button>
+                                  <button 
+                                    onClick={() => setEditingNotesId(null)}
+                                    className="text-xs font-medium text-zinc-500 hover:text-black"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            {editingNotesId === lead.id ? (
+                              <textarea
+                                value={tempNotes}
+                                onChange={(e) => setTempNotes(e.target.value)}
+                                className="w-full p-3 text-sm border border-zinc-200 rounded-xl focus:outline-none focus:border-black min-h-[100px] resize-y"
+                                placeholder="Add notes about this customer..."
+                                autoFocus
+                              />
+                            ) : (
+                              <div className="p-4 bg-white border border-zinc-100 rounded-xl min-h-[100px]">
+                                {lead.notes ? (
+                                  <p className="text-sm text-zinc-600 whitespace-pre-wrap">{lead.notes}</p>
+                                ) : (
+                                  <p className="text-sm text-zinc-400 italic">No notes added yet.</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Associated Deals Section */}
+                          <div className="space-y-3">
+                            <h4 className="text-sm font-bold text-zinc-900">Associated Deals</h4>
+                            {leadDeals.length > 0 ? (
+                              <div className="space-y-2">
+                                {leadDeals.map((deal: any) => (
+                                  <div key={deal.id} className="p-3 bg-white border border-zinc-100 rounded-xl flex items-center justify-between">
+                                    <div>
+                                      <p className="text-sm font-medium">{deal.title}</p>
+                                      <p className="text-xs text-zinc-500 capitalize">{deal.stage}</p>
+                                    </div>
+                                    <p className="text-sm font-bold text-emerald-600">${deal.value?.toLocaleString()}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="p-4 bg-white border border-zinc-100 rounded-xl flex items-center justify-center min-h-[100px]">
+                                <p className="text-sm text-zinc-400 italic">No deals associated with this customer.</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

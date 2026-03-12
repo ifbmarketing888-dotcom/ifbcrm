@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS leads (
   company TEXT,
   status TEXT DEFAULT 'lead',
   score INTEGER DEFAULT 0,
+  notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
