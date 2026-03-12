@@ -165,7 +165,16 @@ const useCRMData = () => {
     if (res.ok) fetchData();
   };
 
-  return { leads, deals, tasks, users, stats, loading, addUser, addLead, convertToDeal, updateDealStatus, refresh: fetchData };
+  const updateTaskStatus = async (taskId: string, status: string) => {
+    const res = await fetch("/api/tasks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: taskId, status }),
+    });
+    if (res.ok) fetchData();
+  };
+
+  return { leads, deals, tasks, users, stats, loading, addUser, addLead, convertToDeal, updateDealStatus, updateTaskStatus, refresh: fetchData };
 };
 
 // --- Components ---
@@ -374,42 +383,46 @@ const Dashboard = () => {
             <Link to="/leads" className="text-sm text-zinc-500 hover:text-black">View all</Link>
           </div>
           <div className="divide-y divide-zinc-100">
-            {leads.slice(0, 5).map((lead) => (
-              <div key={lead.id} className="p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors cursor-pointer">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center font-bold text-zinc-600">
-                    {lead.first_name[0]}
+            {leads.slice(0, 5).map((lead) => {
+              const displayName = lead.name || `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Unnamed';
+              const initial = displayName[0]?.toUpperCase() || '?';
+              return (
+                <div key={lead.id} className="p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center font-bold text-zinc-600">
+                      {initial}
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">{displayName}</p>
+                      <p className="text-xs text-zinc-500">{lead.company}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-sm">{lead.first_name} {lead.last_name}</p>
-                    <p className="text-xs text-zinc-500">{lead.company}</p>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs font-medium px-2 py-1 bg-zinc-100 rounded-md capitalize">{lead.status}</span>
+                    <div className="text-right">
+                      <p className="text-xs font-bold text-emerald-600">{lead.score || 0}</p>
+                      <p className="text-[10px] text-zinc-400 uppercase tracking-wider">Score</p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-xs font-medium px-2 py-1 bg-zinc-100 rounded-md capitalize">{lead.status}</span>
-                  <div className="text-right">
-                    <p className="text-xs font-bold text-emerald-600">{lead.score}</p>
-                    <p className="text-[10px] text-zinc-400 uppercase tracking-wider">Score</p>
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm p-6 space-y-4">
           <h3 className="font-semibold">Quick Actions</h3>
           <div className="grid grid-cols-2 gap-4">
-            <button className="p-4 border border-zinc-100 rounded-xl hover:bg-zinc-50 transition-all text-left space-y-2">
-              <TrendingUp className="w-5 h-5 text-blue-500" />
-              <p className="text-sm font-bold">New Deal</p>
-              <p className="text-xs text-zinc-500">Create a new sales opportunity</p>
-            </button>
-            <button className="p-4 border border-zinc-100 rounded-xl hover:bg-zinc-50 transition-all text-left space-y-2">
-              <Clock className="w-5 h-5 text-purple-500" />
-              <p className="text-sm font-bold">Log Activity</p>
-              <p className="text-xs text-zinc-500">Record a call or meeting</p>
-            </button>
+            <Link to="/leads" className="p-4 border border-zinc-100 rounded-xl hover:bg-zinc-50 transition-all text-left space-y-2">
+              <Users className="w-5 h-5 text-blue-500" />
+              <p className="text-sm font-bold">New Customer</p>
+              <p className="text-xs text-zinc-500">Add a new lead to your list</p>
+            </Link>
+            <Link to="/tasks" className="p-4 border border-zinc-100 rounded-xl hover:bg-zinc-50 transition-all text-left space-y-2">
+              <CheckSquare className="w-5 h-5 text-purple-500" />
+              <p className="text-sm font-bold">View Tasks</p>
+              <p className="text-xs text-zinc-500">Check your daily to-do list</p>
+            </Link>
           </div>
         </div>
       </div>
@@ -577,7 +590,7 @@ const DealsPage = () => {
 };
 
 const TasksPage = () => {
-  const { tasks } = useCRMData();
+  const { tasks, updateTaskStatus } = useCRMData();
 
   return (
     <div className="space-y-6">
@@ -590,21 +603,40 @@ const TasksPage = () => {
 
       <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="divide-y divide-zinc-100">
-          {tasks.map((task: any) => (
+          {tasks.length > 0 ? tasks.map((task: any) => (
             <div key={task.id} className="p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors">
               <div className="flex items-center gap-3">
                 <div className={cn(
                   "w-2 h-2 rounded-full",
                   task.priority === 'high' ? "bg-rose-500" : "bg-blue-500"
                 )} />
-                <p className="text-sm font-medium">{task.title}</p>
+                <p className={cn("text-sm font-medium", task.status === 'done' && "line-through text-zinc-400")}>{task.title}</p>
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-xs text-zinc-400">{new Date(task.due_date).toLocaleDateString()}</span>
-                <span className="px-2 py-1 bg-zinc-100 rounded-md text-[10px] font-bold uppercase">{task.status}</span>
+                <span className={cn(
+                  "px-2 py-1 rounded-md text-[10px] font-bold uppercase",
+                  task.status === 'done' ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-600"
+                )}>
+                  {task.status}
+                </span>
+                {task.status !== 'done' && (
+                  <button 
+                    onClick={() => updateTaskStatus(task.id, 'done')}
+                    className="p-1 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors"
+                    title="Mark as Done"
+                  >
+                    <CheckSquare className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
-          ))}
+          )) : (
+            <div className="p-12 text-center text-zinc-400">
+              <CheckSquare className="w-12 h-12 mx-auto mb-4 opacity-20" />
+              <p>No tasks found</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

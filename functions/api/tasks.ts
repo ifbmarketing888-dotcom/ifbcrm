@@ -8,6 +8,17 @@ export async function onRequestGet(context) {
   }
 }
 
+export async function onRequestPatch(context) {
+  const { request, env } = context;
+  const { id, status } = await request.json();
+
+  await env.DB.prepare("UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    .bind(status, id)
+    .run();
+
+  return new Response(JSON.stringify({ success: true }));
+}
+
 export async function onRequestPost(context) {
   const { request, env } = context;
   const { title, status, priority, due_date } = await request.json();

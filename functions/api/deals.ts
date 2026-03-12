@@ -22,11 +22,22 @@ export async function onRequestPost(context) {
 
 export async function onRequestPatch(context) {
   const { request, env } = context;
-  const { id, stage, value } = await request.json();
+  const data = await request.json();
+  const { id, stage, value } = data;
 
-  await env.DB.prepare("UPDATE deals SET stage = ?, value = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-    .bind(stage, value, id)
-    .run();
+  if (stage && value !== undefined) {
+    await env.DB.prepare("UPDATE deals SET stage = ?, value = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .bind(stage, value, id)
+      .run();
+  } else if (stage) {
+    await env.DB.prepare("UPDATE deals SET stage = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .bind(stage, id)
+      .run();
+  } else if (value !== undefined) {
+    await env.DB.prepare("UPDATE deals SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .bind(value, id)
+      .run();
+  }
 
   return new Response(JSON.stringify({ success: true }));
 }
