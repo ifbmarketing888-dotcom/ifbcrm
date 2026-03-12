@@ -13,7 +13,10 @@ import {
   Shield,
   Plus,
   TrendingUp,
-  Clock
+  Clock,
+  DollarSign,
+  Activity,
+  MoreHorizontal
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { cn } from "./lib/utils";
@@ -414,6 +417,21 @@ const Dashboard = () => {
   );
 };
 
+const SidebarItem = ({ to, icon: Icon, label, active }: any) => (
+  <Link 
+    to={to} 
+    className={cn(
+      "flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
+      active 
+        ? "bg-black text-white shadow-lg shadow-black/10" 
+        : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+    )}
+  >
+    <Icon className="w-4 h-4" />
+    {label}
+  </Link>
+);
+
 const CustomersPage = () => {
   const { leads, addLead, convertToDeal } = useCRMData();
   const [showAdd, setShowAdd] = useState(false);
@@ -479,7 +497,7 @@ const CustomersPage = () => {
             {leads.map((lead: any) => (
               <tr key={lead.id} className="hover:bg-zinc-50 transition-colors">
                 <td className="px-6 py-4">
-                  <p className="text-sm font-medium">{lead.first_name} {lead.last_name}</p>
+                  <p className="text-sm font-medium">{lead.name || `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Unnamed'}</p>
                   <p className="text-xs text-zinc-400">{lead.email}</p>
                 </td>
                 <td className="px-6 py-4 text-sm text-zinc-500">{lead.company}</td>
@@ -530,7 +548,7 @@ const DealsPage = () => {
             {deals.map((deal: any) => (
               <tr key={deal.id} className="hover:bg-zinc-50 transition-colors">
                 <td className="px-6 py-4 text-sm font-medium">{deal.title}</td>
-                <td className="px-6 py-4 text-sm text-zinc-500">{deal.first_name} {deal.last_name}</td>
+                <td className="px-6 py-4 text-sm text-zinc-500">{deal.customer_name || deal.lead_id || 'N/A'}</td>
                 <td className="px-6 py-4 text-sm font-bold text-emerald-600">${deal.value?.toLocaleString()}</td>
                 <td className="px-6 py-4">
                   <span className={cn(

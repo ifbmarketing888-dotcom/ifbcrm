@@ -1,7 +1,11 @@
 export async function onRequestGet(context) {
   const { env } = context;
-  const { results } = await env.DB.prepare("SELECT * FROM tasks ORDER BY due_date ASC").all();
-  return new Response(JSON.stringify(results), { headers: { "Content-Type": "application/json" } });
+  try {
+    const { results } = await env.DB.prepare("SELECT * FROM tasks").all();
+    return new Response(JSON.stringify(results), { headers: { "Content-Type": "application/json" } });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+  }
 }
 
 export async function onRequestPost(context) {
